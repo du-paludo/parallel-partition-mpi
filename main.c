@@ -14,7 +14,7 @@
 #include "chrono.h"
 #include "verifica_particoes.h"
 
-#define NTIMES 10
+#define NTIMES 1
 
 #define ll long long
 
@@ -84,13 +84,17 @@ void multi_partition_mpi(ll* input, int n, ll* P, int np, ll* output, int* nO) {
     int processId;
     MPI_Comm_rank(MPI_COMM_WORLD, &processId);
 
-    ll partialResults[nTotalElements];
+    ll* partialResults;
+    partialResults = malloc(sizeof(ll) * np * n);
+
     for (int i = 0; i < np; i++) {
         for (int j = 0; j < n; j++) {
             partialResults[i * n + j] = -1;
         }
     }
-    ll rcvBuffer[nTotalElements];
+
+    ll* rcvBuffer;
+    rcvBuffer = malloc(sizeof(ll) * np * n);
 
     int localPos[np];
     for (int i = 0; i < np; i++) {
@@ -104,15 +108,15 @@ void multi_partition_mpi(ll* input, int n, ll* P, int np, ll* output, int* nO) {
         localPos[partitionIdx]++;
     }
     
-    printf("Process %d: ", processId);
-    print_ll_array(partialResults, nTotalElements);
+    // printf("Process %d: ", processId);
+    // print_ll_array(partialResults, np * n);
 
     // Sends each partition to the process with the corresponding partition index
     MPI_Alltoall(partialResults, n, MPI_LONG_LONG,
                 rcvBuffer, n, MPI_LONG_LONG, MPI_COMM_WORLD);
 
     int k = 0;
-    for (int i = 0; i < nTotalElements; i++) {
+    for (int i = 0; i < np * n; i++) {
         if (rcvBuffer[i] != -1) {
             output[k] = rcvBuffer[i];
             k++;
@@ -120,13 +124,30 @@ void multi_partition_mpi(ll* input, int n, ll* P, int np, ll* output, int* nO) {
     }
     *nO = k;
 
+    free(partialResults);
+    free(rcvBuffer);
+
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        printf("Usage: mpirun -np <nProcesses> ./multi-partition <nTotalElements>\n");
+    int verify, debug = 0;
+
+    if (argc < 2) {
+        printf("Usage: mpirun -np <nProcesses> ./multi-partition <nTotalElements> (-v) (-d)\n");
         return 0;
+    } else if (argc > 2) {
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "-v") == 0) {
+                verify = 1;
+            }
+            else if (strcmp(argv[i], "-d") == 0) {
+                debug = 1;
+            } else {
+                printf("Usage: mpirun -np <nProcesses> ./multi-partition <nTotalElements> (-v) (-d)\n");
+                return 0;
+            }
+        }
     }
 
     int processId, np, n, nO;
@@ -136,7 +157,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &np);
     MPI_Comm_rank(MPI_COMM_WORLD, &processId);
 
-    nTotalElements = atoi(argv[argc-1]);
+    nTotalElements = atoi(argv[1]);
     n = nTotalElements / np;
 
     srand(2024 * 100 + processId);
@@ -157,34 +178,42 @@ int main(int argc, char* argv[]) {
         printf("Failed to alloc partitionArr\n");
         return 1;
     }
-    for (int i = 0; i < np-1; i++) {
-        partitionArr[i] = (i+1) * 50;
-        // partitionArr[i] = gera_aleatorio_ll();
+
+    if (processId == 0) {
+        for (int i = 0; i < np-1; i++) {
+            partitionArr[i] = gera_aleatorio_ll();
+        }
+        qsort(partitionArr, np-1, sizeof(ll), compare);
+        partitionArr[np-1] = LLONG_MAX;
     }
-    qsort(partitionArr, np-1, sizeof(ll), compare);
-    partitionArr[np-1] = LLONG_MAX;
 
-    // printf("Input array: ");
-    // print_ll_array(input, n);
+    MPI_Bcast(partitionArr, np, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+    
+    if (debug) {
+        printf("Input array: ");
+        print_ll_array(input, n);
 
-    // printf("Partition array: ");
-    // print_ll_array(partitionArr, np);
-    // printf("\n");
+        printf("Partition array: ");
+        print_ll_array(partitionArr, np);
+        printf("\n");
+    }
 
-    output = malloc(sizeof(ll) * nTotalElements);
+    output = malloc(sizeof(ll) * np * n);
 
     chronometer_t parallelPartitionTime;
     chrono_reset(&parallelPartitionTime);
     chrono_start(&parallelPartitionTime);
 
     for (int i = 0; i < NTIMES; i++) {
-        printf("Iteration %d\n", i+1);
+        // printf("Iteration %d\n", i+1);
         multi_partition_mpi(input, n, partitionArr, np, output, &nO);
     }
 
-    printf("Output array: ");
-    print_ll_array(output, nO);
-    printf("\n");
+    if (debug) {
+        printf("Processo %d output array: ", processId);
+        print_ll_array(output, nO);
+        printf("\n");
+    }
 
     chrono_stop(&parallelPartitionTime);
     // chrono_reportTime(&parallelPartitionTime, "parallelPartitionTime");
@@ -199,10 +228,13 @@ int main(int argc, char* argv[]) {
     // double megaeps = eps/1000000;
     // printf("Throughput: %lf MEPS/s\n", megaeps);
 
-    // verifica_particoes(input, nElements, partitionArr, nPartition, output, pos);
+    if (verify) {
+        verifica_particoes(input, n, partitionArr, np, output, &nO);
+    }
 
     free(input);
     free(partitionArr);
+    free(output);
 
     MPI_Finalize();
 
