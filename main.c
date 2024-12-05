@@ -15,17 +15,7 @@
 #include "verifica_particoes.h"
 
 #define NTIMES 1
-
 #define ll long long
-
-// pthread_t threads[MAX_THREADS]; // 8
-// int threads_ids[MAX_THREADS]; // 8
-// pthread_barrier_t thread_barrier;
-
-// int localPos[MAX_THREADS][PARTITION_SIZE];
-// ll* partialResults[PARTITION_SIZE][MAX_THREADS]; // 800_000 * 
-
-// int nElements, nPartition, nThreads;
 
 int nTotalElements;
 
@@ -224,9 +214,9 @@ int main(int argc, char* argv[]) {
     double average_time = total_time_in_seconds / (NTIMES);
     printf("Average time: %lf s\n", average_time);
                                   
-    // double eps = nElements * NTIMES / total_time_in_seconds;
-    // double megaeps = eps/1000000;
-    // printf("Throughput: %lf MEPS/s\n", megaeps);
+    double eps = n * NTIMES / total_time_in_seconds;
+    double megaeps = eps/1000000;
+    printf("Throughput: %lf MEPS/s\n", megaeps);
 
     if (verify) {
         verifica_particoes(input, n, partitionArr, np, output, &nO);
