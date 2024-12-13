@@ -14,7 +14,7 @@
 #include "chrono.h"
 #include "verifica_particoes.h"
 
-#define NTIMES 1
+#define NTIMES 10
 #define ll long long
 
 int nTotalElements;
@@ -46,8 +46,8 @@ int compare(const void* a, const void* b) {
 long long gera_aleatorio_ll() {
     int a = rand(); // Returns a pseudo-random integer between 0 and RAND_MAX.
     int b = rand();
-    long long v = ((long long)a * 100 + b) % 150;
-    // long long v = (long long)a * 100 + b;
+    // long long v = ((long long)a * 100 + b) % 150;
+    long long v = (long long)a * 100 + b;
     return v;
 }
 
@@ -123,7 +123,8 @@ void multi_partition_mpi(ll* input, int n, ll* P, int np, ll* output, int* nO) {
 }
 
 int main(int argc, char* argv[]) {
-    int verify, debug = 0;
+    int verify = 0;
+    int debug = 0;
 
     if (argc < 2) {
         printf("Usage: mpirun -np <nProcesses> ./multi-partition <nTotalElements> (-v) (-d)\n");
@@ -217,7 +218,7 @@ int main(int argc, char* argv[]) {
         double average_time = total_time_in_seconds / (NTIMES);
         printf("Average time: %lf s\n", average_time);
                                     
-        double eps = n * NTIMES / total_time_in_seconds;
+        double eps = nTotalElements * NTIMES / total_time_in_seconds;
         double megaeps = eps/1000000;
         printf("Throughput: %lf MEPS/s\n", megaeps);
     }
