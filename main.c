@@ -46,7 +46,7 @@ int compare(const void* a, const void* b) {
 long long gera_aleatorio_ll() {
     int a = rand(); // Returns a pseudo-random integer between 0 and RAND_MAX.
     int b = rand();
-    long long v = ((long long)a * 100 + b) % 200;
+    long long v = ((long long)a * 100 + b) % 150;
     // long long v = (long long)a * 100 + b;
     return v;
 }
@@ -74,48 +74,50 @@ void multi_partition_mpi(ll* input, int n, ll* P, int np, ll* output, int* nO) {
     int processId;
     MPI_Comm_rank(MPI_COMM_WORLD, &processId);
 
-    ll* partialResults;
-    partialResults = malloc(sizeof(ll) * np * n);
+    ll* partialResults = malloc(sizeof(ll) * np * n);
 
+    int* sendCounts = malloc(sizeof(int) * np);
     for (int i = 0; i < np; i++) {
-        for (int j = 0; j < n; j++) {
-            partialResults[i * n + j] = -1;
-        }
-    }
-
-    ll* rcvBuffer;
-    rcvBuffer = malloc(sizeof(ll) * np * n);
-
-    int localPos[np];
-    for (int i = 0; i < np; i++) {
-        localPos[i] = 0;
+        sendCounts[i] = 0;
     }
 
     for (int i = 0; i < n; i++) {
         // Retorna o índice da partição que o elemento pertence
         int partitionIdx = upper_bound(P, np, input[i]);
-        partialResults[partitionIdx * n + localPos[partitionIdx]] = input[i];
-        localPos[partitionIdx]++;
+        partialResults[partitionIdx * n + sendCounts[partitionIdx]] = input[i];
+        sendCounts[partitionIdx]++;
     }
-    
-    // printf("Process %d: ", processId);
-    // print_ll_array(partialResults, np * n);
+
+    // Sends the partition count to each process and receive the partition count from each process
+    int* recvCounts = malloc(sizeof(int) * np);
+    MPI_Alltoall(sendCounts, 1, MPI_INT,
+                recvCounts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    int* sendDispls = malloc(sizeof(int) * np);
+    sendDispls[0] = 0;
+
+    int* recvDispls = malloc(sizeof(int) * np);
+    recvDispls[0] = 0;
+
+    for (int i = 1; i < np; i++) {
+        sendDispls[i] = i * n;
+        recvDispls[i] = recvDispls[i - 1] + recvCounts[i - 1];
+    }
+
+    *nO = recvDispls[np-1] + recvCounts[np-1];
 
     // Sends each partition to the process with the corresponding partition index
-    MPI_Alltoall(partialResults, n, MPI_LONG_LONG,
-                rcvBuffer, n, MPI_LONG_LONG, MPI_COMM_WORLD);
+    MPI_Alltoallv(partialResults, sendCounts, sendDispls, MPI_LONG_LONG,
+                output, recvCounts, recvDispls, MPI_LONG_LONG, MPI_COMM_WORLD);
 
-    int k = 0;
-    for (int i = 0; i < np * n; i++) {
-        if (rcvBuffer[i] != -1) {
-            output[k] = rcvBuffer[i];
-            k++;
-        }
-    }
-    *nO = k;
+    // printf("Process %d: Output: ", processId);
+    // print_ll_array(output, *nO);
 
     free(partialResults);
-    free(rcvBuffer);
+    free(sendCounts);
+    free(recvCounts);
+    free(sendDispls);
+    free(recvDispls);
 
     MPI_Barrier(MPI_COMM_WORLD);
 }
@@ -188,7 +190,7 @@ int main(int argc, char* argv[]) {
         printf("\n");
     }
 
-    output = malloc(sizeof(ll) * np * n);
+    output = malloc(sizeof(ll) * n * np);
 
     chronometer_t parallelPartitionTime;
     chrono_reset(&parallelPartitionTime);
@@ -208,15 +210,17 @@ int main(int argc, char* argv[]) {
     chrono_stop(&parallelPartitionTime);
     // chrono_reportTime(&parallelPartitionTime, "parallelPartitionTime");
 
-    double total_time_in_nanoseconds = (double) chrono_gettotal(&parallelPartitionTime);
-    double total_time_in_seconds = total_time_in_nanoseconds / (1000 * 1000 * 1000);
-    printf("Total time: %lf s\n", total_time_in_seconds);
-    double average_time = total_time_in_seconds / (NTIMES);
-    printf("Average time: %lf s\n", average_time);
-                                  
-    double eps = n * NTIMES / total_time_in_seconds;
-    double megaeps = eps/1000000;
-    printf("Throughput: %lf MEPS/s\n", megaeps);
+    if (processId == 0) {
+        double total_time_in_nanoseconds = (double) chrono_gettotal(&parallelPartitionTime);
+        double total_time_in_seconds = total_time_in_nanoseconds / (1000 * 1000 * 1000);
+        printf("Total time: %lf s\n", total_time_in_seconds);
+        double average_time = total_time_in_seconds / (NTIMES);
+        printf("Average time: %lf s\n", average_time);
+                                    
+        double eps = n * NTIMES / total_time_in_seconds;
+        double megaeps = eps/1000000;
+        printf("Throughput: %lf MEPS/s\n", megaeps);
+    }
 
     if (verify) {
         verifica_particoes(input, n, partitionArr, np, output, &nO);
